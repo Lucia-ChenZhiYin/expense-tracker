@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小日常｜Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<main class="shell">
+  <header class="header">
+    <div>
+      <p class="eyebrow">PERSONAL FINANCE</p>
+      <h1>小日常 <span>Expense Tracker</span></h1>
+      <p class="subheading">記下日常收支，慢慢看見自己的財務習慣。</p>
+    </div>
+    <a class="export" href="/api/export/csv">↓ 匯出 CSV</a>
+  </header>
+
+  <section class="month-bar">
+    <label for="monthPicker">查看月份</label>
+    <input type="month" id="monthPicker">
+    <span id="monthLabel"></span>
+  </section>
+
+  <section class="summary">
+    <article class="summary-card income"><span>本月收入</span><strong id="incomeTotal">$0</strong><small>INCOME</small></article>
+    <article class="summary-card expense"><span>本月支出</span><strong id="expenseTotal">$0</strong><small>EXPENSE</small></article>
+    <article class="summary-card balance"><span>本月結餘</span><strong id="balanceTotal">$0</strong><small>BALANCE</small></article>
+  </section>
+
+  <section class="main-grid">
+    <article class="panel">
+      <div class="panel-title"><div><p class="eyebrow">TRANSACTION</p><h2 id="formTitle">新增一筆紀錄</h2></div></div>
+      <form id="recordForm">
+        <input type="hidden" id="recordId">
+        <div class="type-switch">
+          <label><input type="radio" name="type" value="expense" checked><span>支出</span></label>
+          <label><input type="radio" name="type" value="income"><span>收入</span></label>
+        </div>
+        <label>金額<input id="amount" type="number" min="0.01" step="0.01" placeholder="例如 120" required></label>
+        <div class="two-col">
+          <label>日期<input id="recordDate" type="date" required></label>
+          <label>類別<select id="category" required></select></label>
+        </div>
+        <label>備註<input id="subItem" maxlength="100" placeholder="例如：午餐、捷運、薪水"></label>
+        <div class="actions"><button class="primary" id="saveBtn">儲存紀錄</button><button class="cancel hidden" id="cancelEdit" type="button">取消編輯</button></div>
+      </form>
+      <div class="category-box">
+        <h3>新增自訂類別</h3>
+        <div class="category-inputs">
+          <input id="newCategory" maxlength="30" placeholder="類別名稱">
+          <select id="newCategoryType"><option value="expense">支出</option><option value="income">收入</option></select>
+          <button type="button" class="secondary" id="addCategoryBtn">新增</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-title"><div><p class="eyebrow">SPENDING OVERVIEW</p><h2>支出類別分布</h2></div></div>
+      <div class="chart-wrap"><canvas id="expenseChart"></canvas><div class="chart-center"><small>本月結餘</small><strong id="chartBalance">$0</strong></div></div>
+      <p id="chartEmpty" class="empty hidden">這個月還沒有支出紀錄。</p>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title"><div><p class="eyebrow">HISTORY</p><h2>收支明細</h2></div><span id="recordCount" class="muted">0 筆</span></div>
+    <div id="recordsList"></div>
+    <p id="recordsEmpty" class="empty">目前沒有紀錄，新增第一筆試試看吧！</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title"><div><p class="eyebrow">MONTHLY COMPARISON</p><h2>與上個月相比</h2></div></div>
+    <div id="comparisonList" class="comparison-grid"></div>
+    <p id="comparisonEmpty" class="empty hidden">目前沒有足夠的支出資料可以比較。</p>
+  </section>
+  <footer>Expense Tracker · 使用 Flask 與 SQLite 建立</footer>
+</main>
+<div id="toast" class="toast" role="status"></div>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
