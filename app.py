@@ -1,398 +1,289 @@
-#取得所有類別，並以 JSON 格式回傳。
-from flask import Flask, jsonify, request
-from database import get_connection
+from datetime import date, datetime, timedelta
+from flask import Flask, jsonify, render_template, request, make_response
+import csv
+import io
 
+from database import init_db, get_db
 
-# 建立 Flask 應用程式，使用 app 來設定路由、處理請求，以及啟動伺服器。
 app = Flask(__name__)
+app.config["JSON_AS_ASCII"] = False
 
-from datetime import datetime
-# API：取得所有類別
-@app.route("/api/categories", methods=["GET"])
-def get_categories():
+# 確保資料庫與預設類別存在
+init_db()
 
-    # 取得網址中的 type 參數（如果有的話）
-    category_type = request.args.get("type")
 
-    conn = get_connection()
-
+def get_month():
+    """取得並驗證查詢月份；未提供或格式錯誤時使用本月。"""
+    month = request.args.get("month", date.today().strftime("%Y-%m"))
     try:
-        # 如果有指定類型，就只查詢該類別
-        if category_type:
-            if category_type not in ("income", "expense"):
-                return jsonify({
-                    "error": "Invalid category type"
-                }), 400
-
-            rows = conn.execute("""
-                SELECT id, name, type
-                FROM categories
-                WHERE type = ?
-                ORDER BY id
-            """, (category_type,)).fetchall()
-
-        else:
-            # 沒有指定類型，就取得全部類別
-            rows = conn.execute("""
-                SELECT id, name, type
-                FROM categories
-                ORDER BY id
-            """).fetchall()
-
-        # 將 SQLite 查詢結果轉換成 Python Dictionary
-        categories = [dict(row) for row in rows]
-
-        # 回傳 JSON
-        return jsonify({
-            "categories": categories
-        })
-
-    finally:
-        conn.close()
-# API：取得收支紀錄
-
-@app.route("/api/records", methods=["GET"])
-def get_records():
-
-    # 取得月份參數
-    month = request.args.get("month")
-
-    conn = get_connection()
-
-    try:
-        # 基本 SQL 查詢
-        sql = """
-            SELECT
-                records.id,
-                records.amount,
-                records.type,
-                records.category_id,
-                categories.name AS category_name,
-                records.sub_item,
-                records.date,
-                records.created_at
-            FROM records
-            JOIN categories
-                ON records.category_id = categories.id
-        """
-
-        params = []
-
-        # 如果有指定月份，就增加篩選條件
-        if month:
-            try:
-                datetime.strptime(month, "%Y-%m")
-
-                if len(month) != 7:
-                    raise ValueError
-
-            except ValueError:
-                return jsonify({
-                    "error": "Invalid month format. Use YYYY-MM."
-                }), 400
-
-            sql += " WHERE records.date LIKE ?"
-            params.append(f"{month}-%")
-
-        # 依日期及 ID 排序
-        sql += " ORDER BY records.date DESC, records.id DESC"
-
-        rows = conn.execute(sql, params).fetchall()
-
-        records = [dict(row) for row in rows]
-
-        return jsonify({
-            "records": records,
-            "total": len(records)
-        })
-
-    finally:
-        conn.close()
-
-# API：新增收支紀錄
-@app.route("/api/records", methods=["POST"])
-def create_record():
-
-    # 接收前端傳來的 JSON
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON data"}), 400
-
-    # 取得各項資料
-    amount = data.get("amount")
-    record_type = data.get("type")
-    category_id = data.get("category_id")
-    sub_item = data.get("sub_item", "")
-    record_date = data.get("date")
-
-    # 1. 驗證金額
-    if (
-        not isinstance(amount, int)
-        or isinstance(amount, bool)
-        or amount <= 0
-    ):
-        return jsonify({
-            "error": "Amount must be a positive integer"
-        }), 400
-
-    # 2. 驗證收支類型
-    if record_type not in ("expense", "income"):
-        return jsonify({
-            "error": "Type must be expense or income"
-        }), 400
-
-    # 3. 驗證類別 ID
-    if (
-        not isinstance(category_id, int)
-        or isinstance(category_id, bool)
-        or category_id <= 0
-    ):
-        return jsonify({
-            "error": "Invalid category_id"
-        }), 400
-
-    # 4. 驗證備註
-    if not isinstance(sub_item, str):
-        return jsonify({
-            "error": "sub_item must be a string"
-        }), 400
-
-    # 5. 驗證日期
-    if not isinstance(record_date, str):
-        return jsonify({
-            "error": "Invalid date"
-        }), 400
-
-    try:
-        datetime.strptime(record_date, "%Y-%m-%d")
-
-        if len(record_date) != 10:
-            raise ValueError
-
+        datetime.strptime(month, "%Y-%m")
+        return month
     except ValueError:
-        return jsonify({
-            "error": "Date format must be YYYY-MM-DD"
-        }), 400
+        return date.today().strftime("%Y-%m")
 
-    conn = get_connection()
+
+def validate_record(data):
+    """共用新增／編輯紀錄的欄位驗證。"""
+    try:
+        amount = round(float(data.get("amount")), 2)
+        category_id = int(data.get("category_id"))
+        record_date = data.get("date")
+        datetime.strptime(record_date, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None, "請確認金額、類別與日期格式。"
+
+    record_type = data.get("type")
+    note = str(data.get("sub_item", "")).strip()
+
+    if not 0 < amount <= 100_000_000:
+        return None, "金額必須大於 0，且不可超過 100,000,000。"
+    if record_type not in ("expense", "income"):
+        return None, "收支類型不正確。"
+    if len(note) > 100:
+        return None, "備註最多 100 個字。"
+
+    return {
+        "amount": amount,
+        "category_id": category_id,
+        "date": record_date,
+        "type": record_type,
+        "sub_item": note,
+    }, None
+
+
+@app.get("/")
+def index():
+    return render_template("index.html")
+
+
+@app.get("/api/categories")
+def api_get_categories():
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, type FROM categories ORDER BY type, name"
+        ).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.post("/api/categories")
+def api_add_category():
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    category_type = data.get("type")
+
+    if not name or len(name) > 30:
+        return jsonify(error="類別名稱需為 1 至 30 個字。"), 400
+    if category_type not in ("expense", "income"):
+        return jsonify(error="請選擇正確的類別類型。"), 400
 
     try:
-        # 確認類別是否存在，以及類別類型是否正確
-        category = conn.execute("""
-            SELECT id
-            FROM categories
-            WHERE id = ? AND type = ?
-        """, (category_id, record_type)).fetchone()
+        with get_db() as conn:
+            cursor = conn.execute(
+                "INSERT INTO categories (name, type) VALUES (?, ?)",
+                (name, category_type),
+            )
+            category_id = cursor.lastrowid
+    except Exception as exc:
+        # SQLite UNIQUE constraint：同類型不能有重複類別名稱
+        if "UNIQUE" in str(exc).upper():
+            return jsonify(error="這個類別已經存在。"), 409
+        raise
 
-        if category is None:
-            return jsonify({
-                "error": "Category does not exist or type does not match"
-            }), 400
+    return jsonify(id=category_id, name=name, type=category_type), 201
 
-        # 新增資料
-        cursor = conn.execute("""
-            INSERT INTO records
-            (amount, type, category_id, sub_item, date)
+
+@app.get("/api/records")
+def api_get_records():
+    month = get_month()
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT r.id, r.amount, r.type, r.category_id, c.name AS category,
+                   r.sub_item, r.date
+            FROM records r
+            JOIN categories c ON c.id = r.category_id
+            WHERE substr(r.date, 1, 7) = ?
+            ORDER BY r.date DESC, r.id DESC
+            """,
+            (month,),
+        ).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.post("/api/records")
+def api_create_record():
+    payload, error = validate_record(request.get_json(silent=True) or {})
+    if error:
+        return jsonify(error=error), 400
+
+    with get_db() as conn:
+        category = conn.execute(
+            "SELECT id FROM categories WHERE id = ? AND type = ?",
+            (payload["category_id"], payload["type"]),
+        ).fetchone()
+        if not category:
+            return jsonify(error="類別不存在，或類別類型與收支類型不符。"), 400
+
+        cursor = conn.execute(
+            """
+            INSERT INTO records (amount, type, category_id, sub_item, date)
             VALUES (?, ?, ?, ?, ?)
-        """, (
-            amount,
-            record_type,
-            category_id,
-            sub_item.strip(),
-            record_date
-        ))
+            """,
+            (
+                payload["amount"], payload["type"], payload["category_id"],
+                payload["sub_item"], payload["date"],
+            ),
+        )
+        new_id = cursor.lastrowid
 
-        # 儲存變更
-        conn.commit()
+    return jsonify(id=new_id, message="新增成功"), 201
 
-        # 取得剛新增的資料
-        new_record = conn.execute("""
-            SELECT
-                records.id,
-                records.amount,
-                records.type,
-                records.category_id,
-                categories.name AS category_name,
-                records.sub_item,
-                records.date,
-                records.created_at
-            FROM records
-            JOIN categories
-                ON records.category_id = categories.id
-            WHERE records.id = ?
-        """, (cursor.lastrowid,)).fetchone()
 
-        return jsonify({
-            "message": "Record created successfully",
-            "record": dict(new_record)
-        }), 201
+@app.put("/api/records/<int:record_id>")
+def api_update_record(record_id):
+    payload, error = validate_record(request.get_json(silent=True) or {})
+    if error:
+        return jsonify(error=error), 400
 
-    finally:
-        conn.close()
+    with get_db() as conn:
+        category = conn.execute(
+            "SELECT id FROM categories WHERE id = ? AND type = ?",
+            (payload["category_id"], payload["type"]),
+        ).fetchone()
+        if not category:
+            return jsonify(error="類別不存在，或類別類型與收支類型不符。"), 400
 
-# API：修改收支紀錄
-@app.route("/api/records/<int:record_id>", methods=["PUT"])
-def update_record(record_id):
-
-    # 接收前端傳來的 JSON
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON data"}), 400
-
-    # 取得更新資料
-    amount = data.get("amount")
-    record_type = data.get("type")
-    category_id = data.get("category_id")
-    sub_item = data.get("sub_item", "")
-    record_date = data.get("date")
-
-    # 1. 驗證金額
-    if (
-        not isinstance(amount, int)
-        or isinstance(amount, bool)
-        or amount <= 0
-    ):
-        return jsonify({
-            "error": "Amount must be a positive integer"
-        }), 400
-
-    # 2. 驗證收支類型
-    if record_type not in ("expense", "income"):
-        return jsonify({
-            "error": "Type must be expense or income"
-        }), 400
-
-    # 3. 驗證類別 ID
-    if (
-        not isinstance(category_id, int)
-        or isinstance(category_id, bool)
-        or category_id <= 0
-    ):
-        return jsonify({
-            "error": "Invalid category_id"
-        }), 400
-
-    # 4. 驗證備註
-    if not isinstance(sub_item, str):
-        return jsonify({
-            "error": "sub_item must be a string"
-        }), 400
-
-    # 5. 驗證日期
-    if not isinstance(record_date, str):
-        return jsonify({
-            "error": "Invalid date"
-        }), 400
-
-    try:
-        datetime.strptime(record_date, "%Y-%m-%d")
-
-        if len(record_date) != 10:
-            raise ValueError
-
-    except ValueError:
-        return jsonify({
-            "error": "Date format must be YYYY-MM-DD"
-        }), 400
-
-    conn = get_connection()
-
-    try:
-        # 確認類別存在，且類型相符
-        category = conn.execute("""
-            SELECT id
-            FROM categories
-            WHERE id = ? AND type = ?
-        """, (category_id, record_type)).fetchone()
-
-        if category is None:
-            return jsonify({
-                "error": "Category does not exist or type does not match"
-            }), 400
-
-        # 更新指定 ID 的紀錄
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             UPDATE records
-            SET
-                amount = ?,
-                type = ?,
-                category_id = ?,
-                sub_item = ?,
-                date = ?
+            SET amount = ?, type = ?, category_id = ?, sub_item = ?, date = ?
             WHERE id = ?
-        """, (
-            amount,
-            record_type,
-            category_id,
-            sub_item.strip(),
-            record_date,
-            record_id
-        ))
-
-        # 確認是否真的有更新到資料
+            """,
+            (
+                payload["amount"], payload["type"], payload["category_id"],
+                payload["sub_item"], payload["date"], record_id,
+            ),
+        )
         if cursor.rowcount == 0:
-            return jsonify({
-                "error": "Record not found"
-            }), 404
+            return jsonify(error="找不到這筆紀錄。"), 404
 
-        conn.commit()
+    return jsonify(message="更新成功")
 
-        # 取得更新後的資料
-        updated_record = conn.execute("""
-            SELECT
-                records.id,
-                records.amount,
-                records.type,
-                records.category_id,
-                categories.name AS category_name,
-                records.sub_item,
-                records.date,
-                records.created_at
+
+@app.delete("/api/records/<int:record_id>")
+def api_delete_record(record_id):
+    with get_db() as conn:
+        cursor = conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
+        if cursor.rowcount == 0:
+            return jsonify(error="找不到這筆紀錄。"), 404
+    return jsonify(message="刪除成功")
+
+
+@app.get("/api/analytics/monthly")
+def api_monthly_analytics():
+    month = get_month()
+    with get_db() as conn:
+        totals = conn.execute(
+            """
+            SELECT type, COALESCE(SUM(amount), 0) AS total
             FROM records
-            JOIN categories
-                ON records.category_id = categories.id
-            WHERE records.id = ?
-        """, (record_id,)).fetchone()
+            WHERE substr(date, 1, 7) = ?
+            GROUP BY type
+            """,
+            (month,),
+        ).fetchall()
 
-        return jsonify({
-            "message": "Record updated successfully",
-            "record": dict(updated_record)
-        }), 200
+        category_rows = conn.execute(
+            """
+            SELECT c.name, SUM(r.amount) AS total
+            FROM records r
+            JOIN categories c ON c.id = r.category_id
+            WHERE r.type = 'expense' AND substr(r.date, 1, 7) = ?
+            GROUP BY c.id, c.name
+            ORDER BY total DESC
+            """,
+            (month,),
+        ).fetchall()
 
-    finally:
-        conn.close()
+    result = {"income": 0, "expense": 0}
+    for row in totals:
+        result[row["type"]] = round(row["total"], 2)
 
-# API：刪除收支紀錄
-@app.route("/api/records/<int:record_id>", methods=["DELETE"])
-def delete_record(record_id):
+    result["balance"] = round(result["income"] - result["expense"], 2)
+    result["by_category"] = [
+        {"name": row["name"], "total": round(row["total"], 2)}
+        for row in category_rows
+    ]
+    return jsonify(result)
 
-    conn = get_connection()
 
-    try:
-        # 刪除指定 ID 的紀錄
-        cursor = conn.execute("""
-            DELETE FROM records
-            WHERE id = ?
-        """, (record_id,))
+@app.get("/api/analytics/monthly-comparison")
+def api_monthly_comparison():
+    month = get_month()
+    current_date = datetime.strptime(month + "-01", "%Y-%m-%d")
+    previous_month = (current_date - timedelta(days=1)).strftime("%Y-%m")
 
-        # 確認是否有成功刪除
-        if cursor.rowcount == 0:
-            return jsonify({
-                "error": "Record not found"
-            }), 404
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.name,
+              SUM(CASE WHEN substr(r.date, 1, 7) = ? THEN r.amount ELSE 0 END) AS current_total,
+              SUM(CASE WHEN substr(r.date, 1, 7) = ? THEN r.amount ELSE 0 END) AS previous_total
+            FROM records r
+            JOIN categories c ON c.id = r.category_id
+            WHERE r.type = 'expense'
+              AND substr(r.date, 1, 7) IN (?, ?)
+            GROUP BY c.id, c.name
+            ORDER BY current_total DESC, previous_total DESC
+            """,
+            (month, previous_month, month, previous_month),
+        ).fetchall()
 
-        conn.commit()
+    return jsonify([
+        {
+            "category": row["name"],
+            "current": round(row["current_total"] or 0, 2),
+            "previous": round(row["previous_total"] or 0, 2),
+            "difference": round(
+                (row["current_total"] or 0) - (row["previous_total"] or 0), 2
+            ),
+        }
+        for row in rows
+    ])
 
-        return jsonify({
-            "message": "Record deleted successfully",
-            "deleted_id": record_id
-        }), 200
 
-    finally:
-        conn.close()
+@app.get("/api/export/csv")
+def api_export_csv():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["日期", "收支類型", "類別", "金額", "備註"])
 
-# 啟動 Flask 伺服器
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT r.date, r.type, c.name, r.amount, r.sub_item
+            FROM records r
+            JOIN categories c ON c.id = r.category_id
+            ORDER BY r.date DESC, r.id DESC
+            """
+        ).fetchall()
+
+    for row in rows:
+        writer.writerow([
+            row["date"],
+            "支出" if row["type"] == "expense" else "收入",
+            row["name"],
+            row["amount"],
+            row["sub_item"],
+        ])
+
+    response = make_response("\ufeff" + output.getvalue())
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=expense_records.csv"
+    )
+    return response
+
+
 if __name__ == "__main__":
     app.run(debug=True)
