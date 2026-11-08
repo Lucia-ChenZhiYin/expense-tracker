@@ -1,21 +1,35 @@
-筆記:
-1.為什麼用venv(虛擬環境)
-原因:為了環境隔離，避免不同專案間的套件版本互相影響
-使用指令：
-建立環境：*python -m venv venv*(-m代表Module、venv代表Virtual Environment縮寫、第二個nenv代表虛擬環境資料夾名稱)
-啟動環境 ：*.\venv\Scripts\Activate.ps1*
-    (1).\：代表當前目錄（Current Directory）。告訴系統從你目前所在的資料夾開始找起。
-    (2)venv\：進入你剛剛建立的 venv 虛擬環境資料夾。
-    (3)Scripts\：進入存放 Windows 執行檔與腳本的核心資料夾。
-    (4)Activate.ps1：執行這個專門給 PowerShell 使用的腳本檔案，正式切換進入虛擬環境。
-關閉環境：*deactivate*
-2.為甚麼用Flask(後段架構)
-原因:可以將前端的HTML/CSS/JS與資料庫(SQLite)連結
-3.為何建立requirements.txt
-原因:記錄當前開發環境中安裝的所有 Python 套件與其版本
-使用指令:*pip freeze > requirements.txt*
-freeze:會列出目前Python 環境裡面所有已安裝套件的名稱與確切版本號
-功能:方便其他人一鍵還原開發環境
-指令:*pip install -r requirements.txt*(-r代表Requirements讀取這個檔案裡面的內容)
-4.為什麼用.gitignore
-原因:告訴 Git 忽略掉不需要版控的暫存檔(虛擬環境資料夾venv/、Python快取資料夾__pycache__/、Python 編譯快取檔案*.pyc、資料庫檔案*.db)
+# Expense Tracker 開發筆記
+
+## 專案架構
+- `app.py`：Flask 應用程式、API 路由、資料驗證。
+- `database.py`：SQLite 連線、資料表建立、預設類別。
+- `instance/expense.db`：本機記帳資料庫。
+- `templates/index.html`：網頁結構。
+- `static/css/style.css`：網頁樣式與 RWD。
+- `static/js/app.js`：前端互動、呼叫 API、圖表與明細顯示。
+- `test_database.py`：資料庫初始化的簡單測試。
+
+## 為什麼使用 venv
+隔離不同 Python 專案的套件，避免版本互相影響。
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+deactivate
+```
+
+## 為什麼使用 Flask
+Flask 負責接收前端 HTTP 請求、執行 Python 程式與 SQL，再將資料以 JSON 回傳給前端。
+
+## 為什麼使用 requirements.txt
+記錄專案需要的 Python 套件，讓其他環境可以使用 `pip install -r requirements.txt` 安裝。
+
+## 為什麼使用 .gitignore
+排除虛擬環境、Python 快取及個人資料庫，避免不必要或私人的檔案被提交到 Git。
+
+## 建議理解程式的順序
+1. 先閱讀 `database.py`，理解資料表和外鍵。
+2. 看 `app.py` 的 `api_create_record()`，追蹤新增資料流程。
+3. 看 `index.html`，理解表單與畫面結構。
+4. 看 `app.js` 的表單 submit 事件，理解前端如何呼叫 API。
+5. 看 `api_monthly_analytics()`，理解 SQL 如何計算每月統計。
+6. 自己新增一個小功能，例如依類別篩選紀錄。
