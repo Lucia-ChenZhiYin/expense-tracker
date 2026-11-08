@@ -1,75 +1,72 @@
-# expense-tracker
-# 📊 個人記帳與財務統計網頁應用 (Personal Expense Tracker)
+# Expense Tracker｜個人記帳與財務統計
 
-這是一個基於 Python (Flask) 與原生 Web 技術開發的簡單記帳與財務分析系統。支援收支紀錄、自訂類別、動態圖表視覺化、月度花費比對及 CSV 資料匯出功能。
+Python Flask + SQLite + HTML/CSS/JavaScript + Chart.js 個人記帳練習專案。
 
----
+## 功能
+- 新增、查詢、編輯、刪除收入與支出（CRUD）
+- 內建類別與自訂類別
+- 依月份查看收支紀錄
+- 月收入、月支出、月結餘統計
+- Chart.js 支出類別圓餅圖
+- 本月與上月各類別支出比較
+- 匯出全部紀錄為 UTF-8 CSV
 
-## 🎯 專案功能清單 (Features)
+## 專案結構
+```text
+expense-tracker/
+├── app.py
+├── database.py
+├── test_database.py
+├── requirements.txt
+├── instance/
+│   └── expense.db
+├── templates/
+│   └── index.html
+└── static/
+    ├── css/style.css
+    └── js/app.js
+```
 
-### 1. 基礎收支管理 (CRUD)
-- [ ] **新增收支**：可選擇支出/收入、金額、日期、類別及細項備註。
-- [ ] **自訂類別**：可新增個人化的消費/收入類別，並自動更新至下拉選單。
-- [ ] **每日明細**：依日期分組顯示明細，支援點擊展開/收合、編輯與刪除。
-- [ ] **月度統計卡片**：顯示當月總收入、總支出與當期結餘。
+## Windows / VS Code 執行
+在 VS Code 開啟專案資料夾，使用 PowerShell 終端機：
 
-### 2. 進階分析與工具 (Analytics & Export)
-- [ ] **圓餅圖視覺化**：呈現當月各類別支出佔比，圓餅圖中央動態顯示結餘金額。
-- [ ] **月度增減比較**：比較本月與上月的各類別支出，標示花費增加或減少的金額。
-- [ ] **CSV 資料匯出**：一鍵將所有收支明細匯出為 CSV 檔，方便後續財務管理。
+```powershell
+# 如果已經有 venv，可以跳過建立步驟
+python -m venv venv
 
----
+# 啟動虛擬環境
+.\venv\Scripts\Activate.ps1
 
-## 🛠 技術棧 (Tech Stack)
+# 安裝套件
+pip install -r requirements.txt
 
-- **前端 (Frontend)**: HTML5, CSS3, JavaScript (ES6+), Chart.js
-- **後端 (Backend)**: Python 3.10+, Flask
-- **資料庫 (Database)**: SQLite
-- **開發工具 (Tools)**: VS Code, Git, GitHub
+# 啟動
+python app.py
+```
 
----
+瀏覽器開啟 `http://127.0.0.1:5000`。
 
-## 🗄 資料庫設計 (Database Schema)
+停止伺服器按 `Ctrl + C`；離開虛擬環境輸入 `deactivate`。
 
-### `categories` (類別表)
-| 欄位名稱 | 型態 | 說明 |
-| :--- | :--- | :--- |
-| `id` | INTEGER | 主鍵 (Primary Key) |
-| `name` | TEXT | 類別名稱 (如：飲食, 交通) |
-| `type` | TEXT | 類型 (`expense` 或 `income`) |
+## 資料庫
+資料庫固定使用 `instance/expense.db`。第一次執行會自動建立資料表及預設類別。資料庫檔案已加入 `.gitignore`，不會被 Git 提交。若已有自己的資料庫，請先備份再替換程式。
 
-### `records` (明細表)
-| 欄位名稱 | 型態 | 說明 |
-| :--- | :--- | :--- |
-| `id` | INTEGER | 主鍵 (Primary Key) |
-| `amount` | REAL | 金額 |
-| `type` | TEXT | 類型 (`expense` 或 `income`) |
-| `category_id` | INTEGER | 外鍵 (Foreign Key) |
-| `sub_item` | TEXT | 細項名稱/備註 |
-| `date` | TEXT | 日期 (`YYYY-MM-DD`) |
-| `created_at` | DATETIME | 建立時間 |
+## 執行資料庫測試
+```powershell
+python -m unittest test_database.py
+```
 
----
+## API
+| Method | Endpoint | 說明 |
+|---|---|---|
+| GET | `/api/categories` | 取得類別 |
+| POST | `/api/categories` | 新增類別 |
+| GET | `/api/records?month=YYYY-MM` | 查詢月份紀錄 |
+| POST | `/api/records` | 新增紀錄 |
+| PUT | `/api/records/<id>` | 編輯紀錄 |
+| DELETE | `/api/records/<id>` | 刪除紀錄 |
+| GET | `/api/analytics/monthly?month=YYYY-MM` | 月統計 |
+| GET | `/api/analytics/monthly-comparison?month=YYYY-MM` | 月份比較 |
+| GET | `/api/export/csv` | 匯出 CSV |
 
-## 🔌 API 介面設計規劃 (API Endpoints)
-
-| HTTP 方法 | 路徑 | 說明 |
-| :--- | :--- | :--- |
-| `GET` | `/api/records?month=YYYY-MM` | 取得指定月份的所有記帳明細 |
-| `POST` | `/api/records` | 新增一筆記帳紀錄 |
-| `DELETE` | `/api/records/<id>` | 刪除指定記帳紀錄 |
-| `GET` | `/api/categories` | 取得所有類別選單 |
-| `POST` | `/api/categories` | 新增自訂類別 |
-| `GET` | `/api/analytics/monthly-comparison` | 取得本月與上月的類別支出比較資料 |
-| `GET` | `/api/export/csv` | 下載全量明細 CSV 檔案 |
-
----
-
-## 🚀 開發時程與階段規劃
-
-- [x] **Phase 0**: 撰寫 README 專案計畫書與規格設計
-- [ ] **Phase 1**: 建立 Python (Flask) 開發環境與 SQLite 資料庫連線
-- [ ] **Phase 2**: 完成基礎 HTML/CSS 介面骨架與基礎 CRUD API
-- [ ] **Phase 3**: 串接 Chart.js 實現當月支出圓餅圖
-- [ ] **Phase 4**: 實作前後月花費比較演算法與介面顯示
-- [ ] **Phase 5**: 完成 CSV 檔案下載功能與 UI 增強
+這是單人本機練習專案，未包含登入、雲端同步或正式部署所需的安全功能。
